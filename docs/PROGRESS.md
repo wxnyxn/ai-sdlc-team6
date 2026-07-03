@@ -21,11 +21,11 @@ Features are ordered so that all dependencies are implemented before the feature
 | 3 | 03 | Recurring Todos | 01 | ✅ Completed |
 | 4 | 04 | Reminders & Notifications | 01 | ✅ Completed |
 | 5 | 05 | Subtasks & Progress Tracking | 01 | ✅ Completed |
-| 6 | 06 | Tag System | 01 | ⬜ Not Started |
-| 7 | 07 | Template System | 05 | ⬜ Not Started |
-| 8 | 08 | Search & Filtering | 06 | ⬜ Not Started |
-| 9 | 09 | Export & Import | 01 | ⬜ Not Started |
-| 10 | 10 | Calendar View | 01 | ⬜ Not Started |
+| 6 | 06 | Tag System | 01 | ✅ Completed |
+| 7 | 07 | Template System | 05 | ✅ Completed |
+| 8 | 08 | Search & Filtering | 06 | ✅ Completed |
+| 9 | 09 | Export & Import | 01 | ✅ Completed |
+| 10 | 10 | Calendar View | 01 | ✅ Completed |
 | 11 | 11 | WebAuthn/Passkeys Authentication | — (enables all) | ⬜ Not Started |
 
 ---
@@ -96,7 +96,7 @@ Features are ordered so that all dependencies are implemented before the feature
 
 ---
 
-### ⬜ 06 — Tag System
+### ✅ 06 — Tag System
 **PRP:** [06-tag-system.md](../PRPs/06-tag-system.md)  
 **Depends on:** 01  
 **Blocks:** 08
@@ -108,7 +108,7 @@ Features are ordered so that all dependencies are implemented before the feature
 
 ---
 
-### ⬜ 07 — Template System
+### ✅ 07 — Template System
 **PRP:** [07-template-system.md](../PRPs/07-template-system.md)  
 **Depends on:** 05  
 **Blocks:** —
@@ -120,7 +120,7 @@ Features are ordered so that all dependencies are implemented before the feature
 
 ---
 
-### ⬜ 08 — Search & Filtering
+### ✅ 08 — Search & Filtering
 **PRP:** [08-search-filtering.md](../PRPs/08-search-filtering.md)  
 **Depends on:** 06  
 **Blocks:** —
@@ -132,7 +132,7 @@ Features are ordered so that all dependencies are implemented before the feature
 
 ---
 
-### ⬜ 09 — Export & Import
+### ✅ 09 — Export & Import
 **PRP:** [09-export-import.md](../PRPs/09-export-import.md)  
 **Depends on:** 01  
 **Blocks:** —
@@ -145,7 +145,7 @@ Features are ordered so that all dependencies are implemented before the feature
 
 ---
 
-### ⬜ 10 — Calendar View
+### ✅ 10 — Calendar View
 **PRP:** [10-calendar-view.md](../PRPs/10-calendar-view.md)  
 **Depends on:** 01  
 **Blocks:** —

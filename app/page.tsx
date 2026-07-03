@@ -1,9 +1,11 @@
 'use client';
 
-// Main Todo Page — Feature 01 (Todo CRUD) + Feature 02 (Priority System)
-// UI Reference: docs/main_ui.png, docs/main_ui_pending.png
+// Main Todo Page — Features 01-09
+// UI Reference: docs/main_ui.png, docs/main_ui_pending.png, docs/main_ui_advanced_options.png,
+//               docs/main_ui_export.png, docs/template_ui.png, docs/notification_ui.png
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import Link from 'next/link';
 import { getSingaporeNow, formatSingaporeDate } from '@/lib/timezone';
 
 interface Todo {
@@ -24,6 +26,24 @@ interface Subtask {
   title: string;
   completed: number;
   position: number;
+}
+
+// Feature 06 — Tag
+interface Tag {
+  id: number;
+  name: string;
+  color: string;
+}
+
+// Feature 07 — Template
+interface Template {
+  id: number;
+  name: string;
+  description: string | null;
+  priority: 'high' | 'medium' | 'low';
+  due_date_offset_days: number;
+  subtasks: string;
+  category: string | null;
 }
 
 // Reminder offset → short label (Feature 03)
@@ -77,16 +97,36 @@ export default function HomePage() {
   const [todos, setTodos] = useState<Todo[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterPriority, setFilterPriority] = useState('all');
+  const [showAdvancedFilter, setShowAdvancedFilter] = useState(false);
 
   // ── Edit state ───────────────────────────────────────────────────────────────
   const [editId, setEditId] = useState<number | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [editPriority, setEditPriority] = useState<'high' | 'medium' | 'low'>('medium');
   const [editDueDate, setEditDueDate] = useState('');
+
   // ── Subtask state (Feature 05) ─────────────────────────────────────
   const [expandedTodoId, setExpandedTodoId] = useState<number | null>(null);
   const [subtasksMap, setSubtasksMap] = useState<Record<number, Subtask[]>>({});
   const [newSubtaskTitles, setNewSubtaskTitles] = useState<Record<number, string>>({});
+
+  // ── Tag state (Feature 06) ─────────────────────────────────────────
+  const [tags, setTags] = useState<Tag[]>([]);
+  const [todoTagsMap, setTodoTagsMap] = useState<Record<number, Tag[]>>({});
+  const [filterTagId, setFilterTagId] = useState<number | null>(null);
+  const [newTagName, setNewTagName] = useState('');
+  const [newTagColor, setNewTagColor] = useState('#6b7280');
+  const [showTagManager, setShowTagManager] = useState(false);
+
+  // ── Template state (Feature 07) ────────────────────────────────────
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
+  const [selectedTemplateId, setSelectedTemplateId] = useState('');
+
+  // ── Data menu state (Feature 09) ───────────────────────────────────
+  const [showDataMenu, setShowDataMenu] = useState(false);
+  const dataMenuRef = useRef<HTMLDivElement>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
   // ── Load todos ────────────────────────────────────────────────────────────────
   const loadTodos = useCallback(async () => {
     const res = await fetch('/api/todos');
@@ -96,8 +136,40 @@ export default function HomePage() {
     }
   }, []);
 
+  // ── Load tags (Feature 06) ────────────────────────────────────────────────
+  const loadTags = useCallback(async () => {
+    const res = await fetch('/api/tags');
+    if (res.ok) {
+      const data = await res.json();
+      setTags(data.tags ?? []);
+    }
+  }, []);
+
+  // ── Load templates (Feature 07) ───────────────────────────────────────────
+  const loadTemplates = useCallback(async () => {
+    const res = await fetch('/api/templates');
+    if (res.ok) {
+      const data = await res.json();
+      setTemplates(data.templates ?? []);
+    }
+  }, []);
+
   useEffect(() => {
     loadTodos();
+    loadTags();
+    loadTemplates();
+  }, [loadTodos, loadTags, loadTemplates]);
+
+  // ── Close data menu on outside click (Feature 09) ─────────────────────────
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (dataMenuRef.current && !dataMenuRef.current.contains(e.target as Node)) {
+        setShowDataMenu(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
   }, [loadTodos]);
 
   // ── Notification permission (Feature 04) ─────────────────────────────────────
@@ -151,7 +223,7 @@ export default function HomePage() {
       setExpandedTodoId(null);
     } else {
       setExpandedTodoId(todoId);
-      await loadSubtasks(todoId);
+      await Promise.all([loadSubtasks(todoId), loadTodoTags(todoId)]);
     }
   }
 
@@ -188,6 +260,138 @@ export default function HomePage() {
     if (typeof window !== 'undefined' && 'Notification' in window) {
       Notification.requestPermission();
     }
+  }
+
+  // ── Tag handlers (Feature 06) ─────────────────────────────────────────────
+  async function loadTodoTags(todoId: number) {
+    const res = await fetch(`/api/todos/${todoId}/tags`);
+    if (res.ok) {
+      const data = await res.json();
+      setTodoTagsMap((prev) => ({ ...prev, [todoId]: data.tags ?? [] }));
+    }
+  }
+
+  async function handleCreateTag() {
+    if (!newTagName.trim()) return;
+    await fetch('/api/tags', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: newTagName.trim(), color: newTagColor }),
+    });
+    setNewTagName('');
+    setNewTagColor('#6b7280');
+    loadTags();
+  }
+
+  async function handleDeleteTag(tagId: number) {
+    await fetch(`/api/tags/${tagId}`, { method: 'DELETE' });
+    loadTags();
+    setTodoTagsMap({}); // clear cache — tags may have been removed from todos
+  }
+
+  async function handleAddTagToTodo(todoId: number, tagId: number) {
+    await fetch(`/api/todos/${todoId}/tags`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tagId }),
+    });
+    loadTodoTags(todoId);
+  }
+
+  async function handleRemoveTagFromTodo(todoId: number, tagId: number) {
+    await fetch(`/api/todos/${todoId}/tags/${tagId}`, { method: 'DELETE' });
+    loadTodoTags(todoId);
+  }
+
+  // ── Template handlers (Feature 07) ───────────────────────────────────────
+  async function handleSaveAsTemplate() {
+    if (!title.trim()) return;
+    const name = window.prompt('Template name:', title.trim());
+    if (!name?.trim()) return;
+    await fetch('/api/templates', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name.trim(), priority }),
+    });
+    loadTemplates();
+  }
+
+  async function handleUseTemplate(templateId: string) {
+    if (!templateId) return;
+    const template = templates.find((t) => String(t.id) === templateId);
+    if (!template) return;
+    setTitle(template.name);
+    setPriority(template.priority);
+    setSelectedTemplateId('');
+  }
+
+  async function handleDeleteTemplate(templateId: number) {
+    await fetch(`/api/templates/${templateId}`, { method: 'DELETE' });
+    loadTemplates();
+  }
+
+  async function handleApplyTemplate(templateId: number) {
+    const res = await fetch(`/api/templates/${templateId}/use`, { method: 'POST' });
+    if (res.ok) loadTodos();
+  }
+
+  // ── Export / Import handlers (Feature 09) ────────────────────────────────
+  async function handleExportJSON() {
+    setShowDataMenu(false);
+    const res = await fetch('/api/todos/export');
+    if (!res.ok) return;
+    const data = await res.json();
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'todos-export.json'; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function handleExportCSV() {
+    setShowDataMenu(false);
+    const header = ['ID', 'Title', 'Priority', 'Due Date', 'Completed', 'Recurrence', 'Reminder (min)'];
+    const rows = todos.map((t) => [
+      t.id, `"${t.title.replace(/"/g, '""')}"`, t.priority,
+      t.due_date ?? '', t.completed ? 'Yes' : 'No',
+      t.recurrence_pattern ?? '', t.reminder_offset_minutes ?? '',
+    ]);
+    const csv = [header, ...rows].map((r) => r.join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'todos-export.csv'; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function handleImportClick() {
+    setShowDataMenu(false);
+    importInputRef.current?.click();
+  }
+
+  async function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const json = JSON.parse(text);
+      const res = await fetch('/api/todos/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(json),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        alert(`Imported ${data.imported} todo(s) successfully.`);
+        loadTodos();
+      } else {
+        const data = await res.json();
+        alert(`Import failed: ${data.error}`);
+      }
+    } catch {
+      alert('Invalid JSON file.');
+    }
+    e.target.value = '';
   }
 
   // ── Add todo ──────────────────────────────────────────────────────────────────
@@ -269,7 +473,10 @@ export default function HomePage() {
   const filtered = todos.filter((t) => {
     const matchesSearch = t.title.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesPriority = filterPriority === 'all' || t.priority === filterPriority;
-    return matchesSearch && matchesPriority;
+    // Feature 06 — tag filter (client-side against cached todoTagsMap)
+    const matchesTag = filterTagId === null ||
+      (todoTagsMap[t.id] ?? []).some((tag) => tag.id === filterTagId);
+    return matchesSearch && matchesPriority && matchesTag;
   });
 
   const overdue = filtered.filter(
@@ -378,6 +585,16 @@ export default function HomePage() {
                 {dueInfo.overdue ? dueInfo.text : (todo.due_date ? formatSingaporeDate(todo.due_date) : '')}
               </span>
             )}
+            {/* Tag chips (Feature 06) — shown when expanded or cached */}
+            {(todoTagsMap[todo.id] ?? []).map((tag) => (
+              <span
+                key={tag.id}
+                className="text-xs font-medium px-2 py-0.5 rounded-full"
+                style={{ backgroundColor: tag.color + '22', color: tag.color }}
+              >
+                {tag.name}
+              </span>
+            ))}
           </div>
         </div>
 
@@ -470,6 +687,42 @@ export default function HomePage() {
                 Add
               </button>
             </div>
+
+            {/* Tag management (Feature 06) */}
+            <div className="mt-3 border-t border-gray-100 pt-3">
+              <p className="text-xs font-semibold text-gray-500 mb-1">Tags</p>
+              <div className="flex flex-wrap gap-1 mb-2">
+                {(todoTagsMap[todo.id] ?? []).map((tag) => (
+                  <span
+                    key={tag.id}
+                    className="text-xs px-2 py-0.5 rounded-full flex items-center gap-1"
+                    style={{ backgroundColor: tag.color + '22', color: tag.color }}
+                  >
+                    {tag.name}
+                    <button
+                      onClick={() => handleRemoveTagFromTodo(todo.id, tag.id)}
+                      className="text-xs opacity-60 hover:opacity-100 ml-1"
+                    >×</button>
+                  </span>
+                ))}
+              </div>
+              <select
+                className="border rounded px-2 py-1 text-xs"
+                defaultValue=""
+                onChange={(e) => {
+                  if (e.target.value) handleAddTagToTodo(todo.id, Number(e.target.value));
+                  e.target.value = '';
+                }}
+              >
+                <option value="">+ Add tag…</option>
+                {tags
+                  .filter((tag) => !(todoTagsMap[todo.id] ?? []).some((t) => t.id === tag.id))
+                  .map((tag) => (
+                    <option key={tag.id} value={tag.id}>{tag.name}</option>
+                  ))
+                }
+              </select>
+            </div>
           </div>
         )}
       </div>
@@ -489,13 +742,34 @@ export default function HomePage() {
           </p>
         </div>
         <nav className="flex items-center gap-2 flex-wrap justify-end">
-          <button className="px-3 py-2 rounded-lg bg-gray-100 text-gray-700 text-sm font-medium hover:bg-gray-200">
-            ⋮ Data
-          </button>
-          <button className="px-4 py-2 rounded-lg bg-purple-600 text-white text-sm font-medium hover:bg-purple-700">
+          {/* Feature 09 — Data dropdown */}
+          <div className="relative" ref={dataMenuRef}>
+            <button
+              onClick={() => setShowDataMenu((v) => !v)}
+              className="px-3 py-2 rounded-lg bg-gray-100 text-gray-700 text-sm font-medium hover:bg-gray-200"
+            >
+              ⋮ Data
+            </button>
+            {showDataMenu && (
+              <div className="absolute right-0 mt-1 w-40 bg-white border rounded-lg shadow-lg z-50 overflow-hidden">
+                <button onClick={handleExportJSON} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50">Export JSON</button>
+                <button onClick={handleExportCSV} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50">Export CSV</button>
+                <button onClick={handleImportClick} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50">Import JSON</button>
+              </div>
+            )}
+            <input ref={importInputRef} type="file" accept=".json" className="hidden" onChange={handleImportFile} />
+          </div>
+
+          {/* Feature 10 — Calendar link */}
+          <Link href="/calendar" className="px-4 py-2 rounded-lg bg-purple-600 text-white text-sm font-medium hover:bg-purple-700">
             Calendar
-          </button>
-          <button className="px-4 py-2 rounded-lg bg-purple-600 text-white text-sm font-medium hover:bg-purple-700">
+          </Link>
+
+          {/* Feature 07 — Templates modal */}
+          <button
+            onClick={() => { setShowTemplateModal(true); loadTemplates(); }}
+            className="px-4 py-2 rounded-lg bg-purple-600 text-white text-sm font-medium hover:bg-purple-700"
+          >
             📋 Templates
           </button>
           <button
@@ -611,12 +885,27 @@ export default function HomePage() {
                 <option value="10080">1 week before</option>
               </select>
             </div>
-            {/* Row 2: Use Template (Feature 07 placeholder) */}
-            <div className="flex items-center gap-3">
+            {/* Row 2: Use Template + Save as Template (Feature 07) */}
+            <div className="flex items-center gap-3 flex-wrap">
               <span className="text-sm font-medium">Use Template:</span>
-              <select className="border rounded-lg px-3 py-1 text-sm min-w-[180px]">
-                <option value="">Select a template...</option>
+              <select
+                value={selectedTemplateId}
+                onChange={(e) => { setSelectedTemplateId(e.target.value); handleUseTemplate(e.target.value); }}
+                className="border rounded-lg px-3 py-1 text-sm min-w-[180px]"
+              >
+                <option value="">Select a template…</option>
+                {templates.map((t) => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
               </select>
+              {title.trim() && (
+                <button
+                  onClick={handleSaveAsTemplate}
+                  className="px-3 py-1 bg-green-500 text-white text-sm rounded-lg hover:bg-green-600"
+                >
+                  Save as Template
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -634,7 +923,7 @@ export default function HomePage() {
         </div>
 
         {/* ── Filter bar ── */}
-        <div className="flex gap-2 mb-6">
+        <div className="flex gap-2 mb-2 flex-wrap">
           <select
             value={filterPriority}
             onChange={(e) => setFilterPriority(e.target.value)}
@@ -645,10 +934,47 @@ export default function HomePage() {
             <option value="medium">Medium</option>
             <option value="low">Low</option>
           </select>
-          <button className="px-4 py-2 rounded-lg bg-gray-200 text-sm font-medium hover:bg-gray-300">
-            ► Advanced
+          <button
+            onClick={() => setShowAdvancedFilter((v) => !v)}
+            className="px-4 py-2 rounded-lg bg-gray-200 text-sm font-medium hover:bg-gray-300"
+          >
+            {showAdvancedFilter ? '▼' : '►'} Advanced
+          </button>
+          {/* Feature 06 — Tag filter manager button */}
+          <button
+            onClick={() => { setShowTagManager(true); loadTags(); }}
+            className="px-4 py-2 rounded-lg bg-gray-100 text-sm font-medium hover:bg-gray-200"
+          >
+            🏷 Tags
           </button>
         </div>
+
+        {/* ── Advanced filter: tag chips (Feature 06 + 08) ── */}
+        {showAdvancedFilter && tags.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-4 p-3 border rounded-lg bg-gray-50">
+            <span className="text-xs text-gray-500 self-center">Filter by tag:</span>
+            <button
+              onClick={() => setFilterTagId(null)}
+              className={`text-xs px-2 py-1 rounded-full border ${filterTagId === null ? 'bg-gray-700 text-white border-gray-700' : 'bg-white text-gray-600'}`}
+            >
+              All
+            </button>
+            {tags.map((tag) => (
+              <button
+                key={tag.id}
+                onClick={() => setFilterTagId(filterTagId === tag.id ? null : tag.id)}
+                className="text-xs px-2 py-1 rounded-full border"
+                style={{
+                  backgroundColor: filterTagId === tag.id ? tag.color : tag.color + '22',
+                  color: filterTagId === tag.id ? '#fff' : tag.color,
+                  borderColor: tag.color,
+                }}
+              >
+                {tag.name}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* ── Empty state ── */}
         {filtered.length === 0 && (
@@ -701,6 +1027,125 @@ export default function HomePage() {
           <p className="text-xs text-gray-500">Completed</p>
         </div>
       </div>
+
+      {/* ── Templates Modal (Feature 07) ── */}
+      {showTemplateModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md mx-4 max-h-[80vh] flex flex-col">
+            <h2 className="text-lg font-bold mb-4">My Templates</h2>
+            <div className="flex-1 overflow-y-auto space-y-3 mb-4">
+              {templates.length === 0 && (
+                <p className="text-gray-400 text-sm text-center py-6">No templates yet. Create a todo and click &quot;Save as Template&quot;.</p>
+              )}
+              {templates.map((t) => (
+                <div key={t.id} className="border rounded-lg p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-sm">{t.name}</p>
+                      {t.description && <p className="text-xs text-gray-500 mt-0.5">{t.description}</p>}
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="text-xs text-gray-500">Priority:</span>
+                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                          t.priority === 'high' ? 'bg-red-100 text-red-700' :
+                          t.priority === 'medium' ? 'bg-yellow-100 text-yellow-700' :
+                          'bg-blue-100 text-blue-700'
+                        }`}>{t.priority.charAt(0).toUpperCase() + t.priority.slice(1)}</span>
+                        {t.category && (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">{t.category}</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex gap-2 mt-2">
+                    <button
+                      onClick={() => { handleApplyTemplate(t.id); setShowTemplateModal(false); }}
+                      className="px-3 py-1 bg-blue-500 text-white text-xs rounded-lg hover:bg-blue-600"
+                    >
+                      Use Template
+                    </button>
+                    <button
+                      onClick={() => handleDeleteTemplate(t.id)}
+                      className="px-3 py-1 bg-red-100 text-red-600 text-xs rounded-lg hover:bg-red-200"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <button
+              onClick={() => setShowTemplateModal(false)}
+              className="w-full py-2 bg-gray-200 rounded-lg text-sm hover:bg-gray-300"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Tag Manager Modal (Feature 06) ── */}
+      {showTagManager && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-sm mx-4">
+            <h2 className="text-lg font-bold mb-4">Manage Tags</h2>
+
+            {/* Create tag */}
+            <div className="flex gap-2 mb-4">
+              <input
+                type="text"
+                placeholder="Tag name…"
+                value={newTagName}
+                onChange={(e) => setNewTagName(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleCreateTag()}
+                className="flex-1 border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-300"
+              />
+              <input
+                type="color"
+                value={newTagColor}
+                onChange={(e) => setNewTagColor(e.target.value)}
+                className="w-10 h-10 rounded border cursor-pointer p-0.5"
+                title="Tag color"
+              />
+              <button
+                onClick={handleCreateTag}
+                className="px-3 py-2 bg-blue-500 text-white text-sm rounded-lg hover:bg-blue-600"
+              >
+                Add
+              </button>
+            </div>
+
+            {/* Existing tags */}
+            <div className="space-y-2 max-h-48 overflow-y-auto mb-4">
+              {tags.length === 0 && (
+                <p className="text-gray-400 text-sm text-center py-4">No tags yet.</p>
+              )}
+              {tags.map((tag) => (
+                <div key={tag.id} className="flex items-center justify-between">
+                  <span
+                    className="text-sm px-3 py-1 rounded-full"
+                    style={{ backgroundColor: tag.color + '22', color: tag.color }}
+                  >
+                    {tag.name}
+                  </span>
+                  <button
+                    onClick={() => handleDeleteTag(tag.id)}
+                    className="text-red-400 hover:text-red-600 text-sm"
+                  >
+                    Delete
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <button
+              onClick={() => setShowTagManager(false)}
+              className="w-full py-2 bg-gray-200 rounded-lg text-sm hover:bg-gray-300"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
