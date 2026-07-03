@@ -7,6 +7,8 @@ This file guides AI agents working on this codebase. Follow each section in orde
 > - Avoid implementing features out of order, which can cause missing DB schema, missing API endpoints, or broken UI flows.
 > - Update the feature status in `docs/PROGRESS.md` to `🔄 In Progress` before starting, and `✅ Completed` when done.
 
+> **UI Reference**: Before writing any UI code, open the screenshot(s) listed for the feature in [`docs/FEATURES.md`](docs/FEATURES.md). All images are stored in `docs/`. Match the exact layout, button labels, colors, badge styles, and interaction patterns shown. Do not invent UI that is not visible in the screenshots.
+
 ---
 
 ## 1. Reference Project Patterns
@@ -38,9 +40,10 @@ Before implementing, read the relevant section of `USER_GUIDE.md` to understand 
 
 When building a feature:
 
+0. **Read UI spec first**: Open [`docs/FEATURES.md`](docs/FEATURES.md), find the feature section, and study the listed `docs/*.png` screenshot(s). The UI specification there is the source of truth for layout, labels, colors, and interactions.
 1. **Database first**: Add or update the schema and CRUD methods in `lib/db.ts`. Handle migrations with try-catch `ALTER TABLE` blocks inside `db.exec()`.
 2. **API route**: Create or update the route under `app/api/`. Follow the standard pattern (auth check → param extraction → DB call → response).
-3. **UI**: Update `app/page.tsx` for main todo features, or `app/calendar/page.tsx` for calendar features. Use React hooks for state; call API routes via `fetch`.
+3. **UI**: Update `app/page.tsx` for main todo features, or `app/calendar/page.tsx` for calendar features. Use React hooks for state; call API routes via `fetch`. Match the screenshot exactly.
 4. **Types**: Export shared types from `lib/db.ts` and import them in both API routes and client components.
 5. **No direct DB access from client**: All data mutations go through API routes.
 
