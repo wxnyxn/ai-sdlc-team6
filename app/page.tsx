@@ -4,7 +4,7 @@
 // UI Reference: docs/main_ui.png, docs/main_ui_pending.png
 
 import { useEffect, useState, useCallback } from 'react';
-import { getSingaporeNow } from '@/lib/timezone';
+import { getSingaporeNow, formatSingaporeDate } from '@/lib/timezone';
 
 interface Todo {
   id: number;
@@ -16,6 +16,26 @@ interface Todo {
   reminder_offset_minutes: number | null;
   created_at: string;
   subtask_count?: number;
+}
+
+interface Subtask {
+  id: number;
+  todo_id: number;
+  title: string;
+  completed: number;
+  position: number;
+}
+
+// Reminder offset → short label (Feature 03)
+function getReminderLabel(minutes: number): string {
+  if (minutes === 15) return '15m';
+  if (minutes === 30) return '30m';
+  if (minutes === 60) return '1h';
+  if (minutes === 120) return '2h';
+  if (minutes === 1440) return '1d';
+  if (minutes === 2880) return '2d';
+  if (minutes === 10080) return '1w';
+  return `${minutes}m`;
 }
 
 // Priority badge Tailwind classes (Feature 02)
@@ -48,6 +68,9 @@ export default function HomePage() {
   const [priority, setPriority] = useState<'high' | 'medium' | 'low'>('medium');
   const [dueDate, setDueDate] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [recurrenceEnabled, setRecurrenceEnabled] = useState(false);
+  const [recurrencePattern, setRecurrencePattern] = useState<'daily' | 'weekly' | 'monthly' | 'yearly'>('weekly');
+  const [reminderOffsetMinutes, setReminderOffsetMinutes] = useState<number | null>(null);
   const [formError, setFormError] = useState('');
 
   // ── List state ───────────────────────────────────────────────────────────────
@@ -60,7 +83,10 @@ export default function HomePage() {
   const [editTitle, setEditTitle] = useState('');
   const [editPriority, setEditPriority] = useState<'high' | 'medium' | 'low'>('medium');
   const [editDueDate, setEditDueDate] = useState('');
-
+  // ── Subtask state (Feature 05) ─────────────────────────────────────
+  const [expandedTodoId, setExpandedTodoId] = useState<number | null>(null);
+  const [subtasksMap, setSubtasksMap] = useState<Record<number, Subtask[]>>({});
+  const [newSubtaskTitles, setNewSubtaskTitles] = useState<Record<number, string>>({});
   // ── Load todos ────────────────────────────────────────────────────────────────
   const loadTodos = useCallback(async () => {
     const res = await fetch('/api/todos');
@@ -74,6 +100,96 @@ export default function HomePage() {
     loadTodos();
   }, [loadTodos]);
 
+  // ── Notification permission (Feature 04) ─────────────────────────────────────
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      if (Notification.permission === 'default') {
+        Notification.requestPermission();
+      }
+    }
+  }, []);
+
+  // ── Notification polling every 60 seconds (Feature 04) ───────────────────────
+  useEffect(() => {
+    async function checkNotifications() {
+      if (typeof window === 'undefined' || !('Notification' in window)) return;
+      if (Notification.permission !== 'granted') return;
+
+      const res = await fetch('/api/notifications/check');
+      if (!res.ok) return;
+
+      const data = await res.json();
+      const items: Array<{ id: number; title: string; due_date: string | null }> =
+        data.notifications ?? [];
+
+      for (const todo of items) {
+        new Notification('Todo Reminder', {
+          body: todo.due_date
+            ? `"${todo.title}" is due soon`
+            : `Reminder: "${todo.title}"`,
+          icon: '/favicon.ico',
+        });
+      }
+    }
+
+    checkNotifications();
+    const interval = setInterval(checkNotifications, 60_000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // ── Subtask handlers (Feature 05) ─────────────────────────────────────
+  async function loadSubtasks(todoId: number) {
+    const res = await fetch(`/api/todos/${todoId}/subtasks`);
+    if (res.ok) {
+      const data = await res.json();
+      setSubtasksMap((prev) => ({ ...prev, [todoId]: data.subtasks ?? [] }));
+    }
+  }
+
+  async function handleExpandToggle(todoId: number) {
+    if (expandedTodoId === todoId) {
+      setExpandedTodoId(null);
+    } else {
+      setExpandedTodoId(todoId);
+      await loadSubtasks(todoId);
+    }
+  }
+
+  async function handleAddSubtask(todoId: number) {
+    const text = (newSubtaskTitles[todoId] ?? '').trim();
+    if (!text) return;
+    await fetch(`/api/todos/${todoId}/subtasks`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: text }),
+    });
+    setNewSubtaskTitles((prev) => ({ ...prev, [todoId]: '' }));
+    await loadSubtasks(todoId);
+    loadTodos(); // refresh subtask_count
+  }
+
+  async function handleToggleSubtask(subtask: Subtask, todoId: number) {
+    await fetch(`/api/subtasks/${subtask.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ completed: subtask.completed ? 0 : 1 }),
+    });
+    await loadSubtasks(todoId);
+  }
+
+  async function handleDeleteSubtask(subtaskId: number, todoId: number) {
+    await fetch(`/api/subtasks/${subtaskId}`, { method: 'DELETE' });
+    await loadSubtasks(todoId);
+    loadTodos(); // refresh subtask_count
+  }
+
+  // ── Bell click — request permission (Feature 04) ──────────────────────────────
+  function handleBellClick() {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      Notification.requestPermission();
+    }
+  }
+
   // ── Add todo ──────────────────────────────────────────────────────────────────
   async function handleAdd() {
     setFormError('');
@@ -83,6 +199,8 @@ export default function HomePage() {
     }
     const body: Record<string, unknown> = { title, priority };
     if (dueDate) body.dueDate = dueDate;
+    if (recurrenceEnabled) body.recurrencePattern = recurrencePattern;
+    if (reminderOffsetMinutes !== null) body.reminderOffsetMinutes = reminderOffsetMinutes;
 
     const res = await fetch('/api/todos', {
       method: 'POST',
@@ -94,6 +212,9 @@ export default function HomePage() {
       setTitle('');
       setPriority('medium');
       setDueDate('');
+      setRecurrenceEnabled(false);
+      setRecurrencePattern('weekly');
+      setReminderOffsetMinutes(null);
       loadTodos();
     } else {
       const data = await res.json();
@@ -163,6 +284,10 @@ export default function HomePage() {
   function renderTodo(todo: Todo, cardBg = 'bg-white') {
     const isEditing = editId === todo.id;
     const dueInfo = todo.due_date ? getRelativeDue(todo.due_date) : null;
+    const isExpanded = expandedTodoId === todo.id;
+    const subtasks = subtasksMap[todo.id] ?? [];
+    const completedCount = subtasks.filter((s) => s.completed).length;
+    const progress = subtasks.length > 0 ? (completedCount / subtasks.length) * 100 : 0;
 
     if (isEditing) {
       return (
@@ -210,10 +335,9 @@ export default function HomePage() {
     }
 
     return (
-      <div
-        key={todo.id}
-        className={`flex items-start gap-3 p-3 rounded-lg border mb-2 ${cardBg}`}
-      >
+      <div key={todo.id} className={`rounded-lg border mb-2 ${cardBg}`}>
+        {/* ── Main row ── */}
+        <div className="flex items-start gap-3 p-3">
         {/* Checkbox */}
         <input
           type="checkbox"
@@ -236,31 +360,118 @@ export default function HomePage() {
             </span>
             {/* Subtask count */}
             <span className="text-xs text-gray-500">{todo.subtask_count ?? 0}</span>
+            {/* Recurrence chip (Feature 03) */}
+            {todo.recurrence_pattern && (
+              <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
+                📋 {todo.recurrence_pattern}
+              </span>
+            )}
+            {/* Reminder chip (Feature 03) */}
+            {todo.reminder_offset_minutes != null && (
+              <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-green-100 text-green-700">
+                🔔 {getReminderLabel(todo.reminder_offset_minutes)}
+              </span>
+            )}
             {/* Due time */}
             {dueInfo && (
-              <span className={`text-xs ${dueInfo.overdue ? 'text-red-500' : 'text-red-500'}`}>
-                {dueInfo.text}
+              <span className={`text-xs ${dueInfo.overdue ? 'text-red-500' : 'text-blue-500'}`}>
+                {dueInfo.overdue ? dueInfo.text : (todo.due_date ? formatSingaporeDate(todo.due_date) : '')}
               </span>
             )}
           </div>
         </div>
 
-        {/* Actions */}
-        <div className="flex items-center gap-2 shrink-0 text-sm">
-          <button className="text-gray-400 hover:text-gray-600">►</button>
-          <button
-            onClick={() => startEdit(todo)}
-            className="text-blue-500 hover:underline"
-          >
-            Edit
-          </button>
-          <button
-            onClick={() => handleDelete(todo.id)}
-            className="text-red-500 hover:underline"
-          >
-            Del
-          </button>
+          {/* Actions */}
+          <div className="flex items-center gap-2 shrink-0 text-sm">
+            <button
+              onClick={() => handleExpandToggle(todo.id)}
+              className="text-gray-400 hover:text-gray-600"
+              title={isExpanded ? 'Collapse subtasks' : 'Expand subtasks'}
+            >
+              {isExpanded ? '▼' : '►'}
+            </button>
+            <button
+              onClick={() => startEdit(todo)}
+              className="text-blue-500 hover:underline"
+            >
+              Edit
+            </button>
+            <button
+              onClick={() => handleDelete(todo.id)}
+              className="text-red-500 hover:underline"
+            >
+              Del
+            </button>
+          </div>
         </div>
+
+        {/* ── Expanded subtask area (Feature 05) ── */}
+        {isExpanded && (
+          <div className="px-4 pb-4 border-t border-gray-100">
+            {/* Progress bar */}
+            {subtasks.length > 0 && (
+              <div className="mt-3 mb-2">
+                <div className="flex justify-between text-xs text-gray-500 mb-1">
+                  <span>Progress</span>
+                  <span>{completedCount}/{subtasks.length}</span>
+                </div>
+                <div className="w-full bg-gray-100 rounded h-1">
+                  <div
+                    className="bg-blue-500 h-1 rounded transition-all"
+                    style={{ width: `${progress}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Subtask list */}
+            <ul className="mt-2 space-y-1">
+              {subtasks.map((subtask) => (
+                <li key={subtask.id} className="flex items-center gap-2 group">
+                  <input
+                    type="checkbox"
+                    checked={!!subtask.completed}
+                    onChange={() => handleToggleSubtask(subtask, todo.id)}
+                    className="w-4 h-4 cursor-pointer shrink-0"
+                  />
+                  <span
+                    className={`flex-1 text-sm ${
+                      subtask.completed ? 'line-through text-gray-400' : 'text-gray-700'
+                    }`}
+                  >
+                    {subtask.title}
+                  </span>
+                  <button
+                    onClick={() => handleDeleteSubtask(subtask.id, todo.id)}
+                    className="text-red-400 hover:text-red-600 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    ×
+                  </button>
+                </li>
+              ))}
+            </ul>
+
+            {/* Add subtask */}
+            <div className="flex gap-2 mt-3">
+              <input
+                type="text"
+                placeholder="Add a subtask…"
+                value={newSubtaskTitles[todo.id] ?? ''}
+                onChange={(e) =>
+                  setNewSubtaskTitles((prev) => ({ ...prev, [todo.id]: e.target.value }))
+                }
+                onKeyDown={(e) => e.key === 'Enter' && handleAddSubtask(todo.id)}
+                className="flex-1 border rounded px-3 py-1 text-sm outline-none focus:ring-2 focus:ring-blue-300"
+              />
+              <button
+                onClick={() => handleAddSubtask(todo.id)}
+                className="px-3 py-1 bg-blue-500 text-white text-sm rounded hover:bg-blue-600"
+              >
+                Add
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -287,7 +498,11 @@ export default function HomePage() {
           <button className="px-4 py-2 rounded-lg bg-purple-600 text-white text-sm font-medium hover:bg-purple-700">
             📋 Templates
           </button>
-          <button className="px-3 py-2 rounded-lg bg-orange-500 text-white text-sm font-medium hover:bg-orange-600">
+          <button
+            onClick={handleBellClick}
+            className="px-3 py-2 rounded-lg bg-orange-500 text-white text-sm font-medium hover:bg-orange-600"
+            title="Notification settings"
+          >
             🔔
           </button>
           <button className="px-4 py-2 rounded-lg bg-gray-700 text-white text-sm font-medium hover:bg-gray-800">
@@ -346,10 +561,63 @@ export default function HomePage() {
           <span>{showAdvanced ? 'Hide Advanced Options' : 'Show Advanced Options'}</span>
         </button>
 
-        {/* Advanced options placeholder — Features 03, 04, 07 */}
+        {/* ── Advanced options (Features 03, 04, 07) ── */}
         {showAdvanced && (
-          <div className="border rounded-lg p-4 mb-4 bg-gray-50 text-sm text-gray-400 italic">
-            Advanced options (recurrence, reminders, templates) — available in later features
+          <div className="border rounded-lg p-4 mb-4 bg-white">
+            {/* Row 1: Repeat + Reminder */}
+            <div className="flex flex-wrap items-center gap-3 mb-3">
+              <label className="flex items-center gap-2 text-sm font-medium">
+                <input
+                  type="checkbox"
+                  checked={recurrenceEnabled}
+                  onChange={(e) => setRecurrenceEnabled(e.target.checked)}
+                  className="w-4 h-4 cursor-pointer"
+                />
+                Repeat
+              </label>
+              {recurrenceEnabled && (
+                <select
+                  value={recurrencePattern}
+                  onChange={(e) =>
+                    setRecurrencePattern(
+                      e.target.value as 'daily' | 'weekly' | 'monthly' | 'yearly'
+                    )
+                  }
+                  className="border rounded-lg px-3 py-1 text-sm"
+                >
+                  <option value="daily">Daily</option>
+                  <option value="weekly">Weekly</option>
+                  <option value="monthly">Monthly</option>
+                  <option value="yearly">Yearly</option>
+                </select>
+              )}
+              <span className="text-sm font-medium">Reminder:</span>
+              <select
+                value={reminderOffsetMinutes ?? ''}
+                onChange={(e) =>
+                  setReminderOffsetMinutes(
+                    e.target.value !== '' ? Number(e.target.value) : null
+                  )
+                }
+                className="border rounded-lg px-3 py-1 text-sm"
+              >
+                <option value="">None</option>
+                <option value="15">15 min before</option>
+                <option value="30">30 min before</option>
+                <option value="60">1 hour before</option>
+                <option value="120">2 hours before</option>
+                <option value="1440">1 day before</option>
+                <option value="2880">2 days before</option>
+                <option value="10080">1 week before</option>
+              </select>
+            </div>
+            {/* Row 2: Use Template (Feature 07 placeholder) */}
+            <div className="flex items-center gap-3">
+              <span className="text-sm font-medium">Use Template:</span>
+              <select className="border rounded-lg px-3 py-1 text-sm min-w-[180px]">
+                <option value="">Select a template...</option>
+              </select>
+            </div>
           </div>
         )}
 

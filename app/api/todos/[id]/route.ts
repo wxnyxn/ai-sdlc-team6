@@ -7,7 +7,8 @@ export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
-import { todoDB, userDB } from '@/lib/db';
+import { todoDB, tagDB, userDB, RecurrencePattern } from '@/lib/db';
+import { getNextRecurrenceDate } from '@/lib/timezone';
 
 /** Resolves userId from session; in development, falls back to a "dev" user. */
 async function resolveUserId(): Promise<number | null> {
@@ -65,16 +66,39 @@ export async function PUT(
     return NextResponse.json({ error: 'Title is required' }, { status: 400 });
   }
 
+  const completedValue = completed ? 1 : 0;
+
   todoDB.update.run(
     String(title).trim(),
     priority,
     dueDate ?? null,
-    completed ? 1 : 0,
+    completedValue,
     recurrencePattern ?? null,
     reminderOffsetMinutes ?? null,
     todoId,
     userId
   );
+
+  // Feature 03 — Recurring Todos: create next instance on completion
+  if (completedValue === 1 && !existing.completed && existing.recurrence_pattern && existing.due_date) {
+    const nextDue = getNextRecurrenceDate(
+      new Date(existing.due_date),
+      existing.recurrence_pattern as RecurrencePattern
+    );
+    const newTodo = todoDB.create.run(
+      userId,
+      existing.title,
+      existing.priority,
+      nextDue.toISOString(),
+      existing.recurrence_pattern,
+      existing.reminder_offset_minutes ?? null
+    );
+    // Copy tags to next instance
+    const tags = tagDB.findByTodoId.all(existing.id);
+    for (const tag of tags) {
+      tagDB.addToTodo.run(Number(newTodo.lastInsertRowid), tag.id);
+    }
+  }
 
   const updated = todoDB.findById.get(todoId, userId);
   return NextResponse.json({ todo: updated });

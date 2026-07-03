@@ -18,9 +18,9 @@ Features are ordered so that all dependencies are implemented before the feature
 |-------|----|---------|------------|--------|
 | 1 | 01 | Todo CRUD Operations | — | ✅ Completed |
 | 2 | 02 | Priority System | 01 | ✅ Completed |
-| 3 | 03 | Recurring Todos | 01 | ⬜ Not Started |
-| 4 | 04 | Reminders & Notifications | 01 | ⬜ Not Started |
-| 5 | 05 | Subtasks & Progress Tracking | 01 | ⬜ Not Started |
+| 3 | 03 | Recurring Todos | 01 | ✅ Completed |
+| 4 | 04 | Reminders & Notifications | 01 | ✅ Completed |
+| 5 | 05 | Subtasks & Progress Tracking | 01 | ✅ Completed |
 | 6 | 06 | Tag System | 01 | ⬜ Not Started |
 | 7 | 07 | Template System | 05 | ⬜ Not Started |
 | 8 | 08 | Search & Filtering | 06 | ⬜ Not Started |

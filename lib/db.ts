@@ -245,6 +245,9 @@ export const subtaskDB = {
   findByTodoId: db.prepare<[number], Subtask>(
     'SELECT * FROM subtasks WHERE todo_id = ? ORDER BY position ASC'
   ),
+  findById: db.prepare<[number], Subtask>(
+    'SELECT * FROM subtasks WHERE id = ?'
+  ),
   create: db.prepare(
     'INSERT INTO subtasks (todo_id, title, position) VALUES (?, ?, ?)'
   ),

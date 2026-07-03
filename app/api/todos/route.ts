@@ -44,10 +44,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
   }
 
-  const { title, priority = 'medium', dueDate } = body as {
+  const { title, priority = 'medium', dueDate, recurrencePattern, reminderOffsetMinutes } = body as {
     title?: string;
     priority?: string;
     dueDate?: string;
+    recurrencePattern?: string;
+    reminderOffsetMinutes?: number;
   };
 
   if (!title?.trim()) {
@@ -70,13 +72,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid priority' }, { status: 400 });
   }
 
+  const validPatterns = ['daily', 'weekly', 'monthly', 'yearly'];
+  if (recurrencePattern && !validPatterns.includes(recurrencePattern)) {
+    return NextResponse.json({ error: 'Invalid recurrence pattern' }, { status: 400 });
+  }
+
   const result = todoDB.create.run(
     userId,
     title.trim(),
     priority,
     dueDate ?? null,
-    null,
-    null
+    recurrencePattern ?? null,
+    typeof reminderOffsetMinutes === 'number' ? reminderOffsetMinutes : null
   );
 
   const todo = todoDB.findById.get(Number(result.lastInsertRowid), userId);
