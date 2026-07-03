@@ -273,6 +273,9 @@ export const tagDB = {
   create: db.prepare(
     'INSERT INTO tags (user_id, name, color) VALUES (?, ?, ?)'
   ),
+  update: db.prepare(
+    'UPDATE tags SET name = ?, color = ? WHERE id = ? AND user_id = ?'
+  ),
   delete: db.prepare('DELETE FROM tags WHERE id = ? AND user_id = ?'),
   addToTodo: db.prepare(
     'INSERT OR IGNORE INTO todo_tags (todo_id, tag_id) VALUES (?, ?)'
@@ -296,6 +299,10 @@ export const templateDB = {
   create: db.prepare(
     `INSERT INTO templates (user_id, name, description, priority, due_date_offset_days, subtasks, category)
      VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ),
+  update: db.prepare(
+    `UPDATE templates SET name = ?, description = ?, priority = ?, due_date_offset_days = ?, subtasks = ?, category = ?
+     WHERE id = ? AND user_id = ?`
   ),
   delete: db.prepare('DELETE FROM templates WHERE id = ? AND user_id = ?'),
 };

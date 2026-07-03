@@ -6,6 +6,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { getSingaporeNow, toSingaporeDateString } from '@/lib/timezone';
 
 interface Holiday {
@@ -31,10 +32,23 @@ const PRIORITY_DOT: Record<string, string> = {
 };
 
 export default function CalendarPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const today = getSingaporeNow();
-  const [currentDate, setCurrentDate] = useState(
-    new Date(today.getFullYear(), today.getMonth(), 1)
-  );
+
+  // Initialise from ?month=YYYY-MM query param if present
+  function initialDate(): Date {
+    const monthParam = searchParams.get('month');
+    if (monthParam && /^\d{4}-\d{2}$/.test(monthParam)) {
+      const [y, m] = monthParam.split('-').map(Number);
+      if (!isNaN(y) && !isNaN(m) && m >= 1 && m <= 12) {
+        return new Date(y, m - 1, 1);
+      }
+    }
+    return new Date(today.getFullYear(), today.getMonth(), 1);
+  }
+
+  const [currentDate, setCurrentDate] = useState<Date>(initialDate);
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [todoDots, setTodoDots] = useState<Record<string, TodoDot[]>>({});
 
@@ -45,6 +59,9 @@ export default function CalendarPage() {
   const [hDescription, setHDescription] = useState('');
   const [hRecurring, setHRecurring] = useState(false);
   const [hError, setHError] = useState('');
+
+  // Click-day modal state
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
 
   const yearMonth = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
 
@@ -76,11 +93,21 @@ export default function CalendarPage() {
   }, [loadHolidays, loadTodos]);
 
   function prevMonth() {
-    setCurrentDate((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1));
+    setCurrentDate((d) => {
+      const next = new Date(d.getFullYear(), d.getMonth() - 1, 1);
+      const ym = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`;
+      router.replace(`/calendar?month=${ym}`, { scroll: false });
+      return next;
+    });
   }
 
   function nextMonth() {
-    setCurrentDate((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1));
+    setCurrentDate((d) => {
+      const next = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+      const ym = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`;
+      router.replace(`/calendar?month=${ym}`, { scroll: false });
+      return next;
+    });
   }
 
   async function handleAddHoliday() {
@@ -192,8 +219,9 @@ export default function CalendarPage() {
           return (
             <div
               key={idx}
+              onClick={() => day && setSelectedDay(cellDateStr(day))}
               className={`min-h-[72px] rounded-lg border p-1.5 flex flex-col ${
-                !day ? 'bg-gray-50 border-gray-100' : 'bg-white border-gray-200'
+                !day ? 'bg-gray-50 border-gray-100' : 'bg-white border-gray-200 cursor-pointer hover:border-blue-300 hover:bg-blue-50/30 transition-colors'
               } ${isToday ? 'border-blue-500 ring-2 ring-blue-400' : ''}`}
             >
               {day && (
@@ -319,6 +347,62 @@ export default function CalendarPage() {
                 Add
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {/* Day Detail Modal */}
+      {selectedDay && (
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
+          onClick={(e) => { if (e.target === e.currentTarget) setSelectedDay(null); }}
+        >
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-sm mx-4 max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold">{selectedDay}</h2>
+              <button onClick={() => setSelectedDay(null)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+            </div>
+
+            {/* Holidays on this day */}
+            {holidays.filter((h) => h.date === selectedDay).length > 0 && (
+              <div className="mb-3">
+                <p className="text-xs font-semibold text-gray-500 uppercase mb-1">Holidays</p>
+                {holidays
+                  .filter((h) => h.date === selectedDay)
+                  .map((h) => (
+                    <div key={h.id} className="flex items-center justify-between mb-1">
+                      <span className="text-sm px-2 py-0.5 rounded bg-pink-100 text-pink-700">{h.name}</span>
+                      <button
+                        onClick={() => { handleDeleteHoliday(h.id); }}
+                        className="text-pink-400 hover:text-pink-600 text-xs ml-2"
+                      >Delete</button>
+                    </div>
+                  ))}
+              </div>
+            )}
+
+            {/* Todos on this day */}
+            <div className="flex-1 overflow-y-auto">
+              <p className="text-xs font-semibold text-gray-500 uppercase mb-1">Todos</p>
+              {(todoDots[selectedDay] ?? []).length === 0 ? (
+                <p className="text-sm text-gray-400">No todos due this day.</p>
+              ) : (
+                <ul className="space-y-1">
+                  {(todoDots[selectedDay] ?? []).map((t) => (
+                    <li key={t.id} className="flex items-center gap-2 text-sm">
+                      <span className={`w-2 h-2 rounded-full shrink-0 ${PRIORITY_DOT[t.priority]}`} />
+                      <span className="truncate">{t.title}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            <button
+              onClick={() => setSelectedDay(null)}
+              className="mt-4 w-full py-2 bg-gray-200 rounded-lg text-sm hover:bg-gray-300"
+            >
+              Close
+            </button>
           </div>
         </div>
       )}

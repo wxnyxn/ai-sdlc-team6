@@ -33,7 +33,7 @@ export async function GET() {
   }));
 
   return NextResponse.json(
-    { todos: exportData, exportedAt: new Date().toISOString() },
+    { version: '1.0', exportedAt: new Date().toISOString(), todos: exportData },
     {
       headers: {
         'Content-Disposition': 'attachment; filename="todos-export.json"',

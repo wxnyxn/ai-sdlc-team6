@@ -128,11 +128,18 @@ export default function HomePage() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
+  // Save-as-template modal state (replaces window.prompt)
+  const [showSaveTemplateModal, setShowSaveTemplateModal] = useState(false);
+  const [templateSaveName, setTemplateSaveName] = useState('');
+  const [templateSaveDescription, setTemplateSaveDescription] = useState('');
+  const [templateSaveCategory, setTemplateSaveCategory] = useState('');
 
   // ── Data menu state (Feature 09) ───────────────────────────────────
   const [showDataMenu, setShowDataMenu] = useState(false);
   const dataMenuRef = useRef<HTMLDivElement>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
+  // ── Debounce ref for search (Feature 08) ──────────────────────────
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // ── Load todos ────────────────────────────────────────────────────────────────
   const loadTodos = useCallback(async () => {
     const res = await fetch('/api/todos');
@@ -321,13 +328,25 @@ export default function HomePage() {
   // ── Template handlers (Feature 07) ───────────────────────────────────────
   async function handleSaveAsTemplate() {
     if (!title.trim()) return;
-    const name = window.prompt('Template name:', title.trim());
-    if (!name?.trim()) return;
+    setTemplateSaveName(title.trim());
+    setTemplateSaveDescription('');
+    setTemplateSaveCategory('');
+    setShowSaveTemplateModal(true);
+  }
+
+  async function handleConfirmSaveTemplate() {
+    if (!templateSaveName.trim()) return;
     await fetch('/api/templates', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: name.trim(), priority }),
+      body: JSON.stringify({
+        name: templateSaveName.trim(),
+        description: templateSaveDescription.trim() || null,
+        priority,
+        category: templateSaveCategory.trim() || null,
+      }),
     });
+    setShowSaveTemplateModal(false);
     loadTemplates();
   }
 
@@ -422,6 +441,10 @@ export default function HomePage() {
       setFormError('Title is required.');
       return;
     }
+    if (recurrenceEnabled && !dueDate) {
+      setFormError('A due date is required when recurrence is enabled.');
+      return;
+    }
     const body: Record<string, unknown> = { title, priority };
     if (dueDate) body.dueDate = dueDate;
     if (recurrenceEnabled) body.recurrencePattern = recurrencePattern;
@@ -459,6 +482,7 @@ export default function HomePage() {
 
   // ── Delete ────────────────────────────────────────────────────────────────────
   async function handleDelete(id: number) {
+    if (!window.confirm('Delete this todo and all its subtasks?')) return;
     await fetch(`/api/todos/${id}`, { method: 'DELETE' });
     loadTodos();
   }
@@ -492,11 +516,16 @@ export default function HomePage() {
   const now = getSingaporeNow();
 
   const filtered = todos.filter((t) => {
-    const matchesSearch = t.title.toLowerCase().includes(searchQuery.toLowerCase());
+    const q = searchQuery.toLowerCase();
+    const todoTags = todoTagsMap[t.id] ?? [];
+    const matchesSearch =
+      !q ||
+      t.title.toLowerCase().includes(q) ||
+      todoTags.some((tag) => tag.name.toLowerCase().includes(q));
     const matchesPriority = filterPriority === 'all' || t.priority === filterPriority;
     // Feature 06 — tag filter (client-side against cached todoTagsMap)
     const matchesTag = filterTagId === null ||
-      (todoTagsMap[t.id] ?? []).some((tag) => tag.id === filterTagId);
+      todoTags.some((tag) => tag.id === filterTagId);
     return matchesSearch && matchesPriority && matchesTag;
   });
 
@@ -651,11 +680,11 @@ export default function HomePage() {
               <div className="mt-3 mb-2">
                 <div className="flex justify-between text-xs text-gray-500 mb-1">
                   <span>Progress</span>
-                  <span>{completedCount}/{subtasks.length}</span>
+                  <span>{completedCount}/{subtasks.length} ({Math.round(progress)}%)</span>
                 </div>
                 <div className="w-full bg-gray-100 rounded h-1">
                   <div
-                    className="bg-blue-500 h-1 rounded transition-all"
+                    className={`${progress === 100 ? 'bg-green-500' : 'bg-blue-500'} h-1 rounded transition-all`}
                     style={{ width: `${progress}%` }}
                   />
                 </div>
@@ -896,7 +925,9 @@ export default function HomePage() {
                     e.target.value !== '' ? Number(e.target.value) : null
                   )
                 }
-                className="border rounded-lg px-3 py-1 text-sm"
+                disabled={!dueDate}
+                title={!dueDate ? 'Set a due date to enable reminders' : undefined}
+                className="border rounded-lg px-3 py-1 text-sm disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <option value="">None</option>
                 <option value="15">15 min before</option>
@@ -938,15 +969,19 @@ export default function HomePage() {
           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">🔍</span>
           <input
             type="text"
-            placeholder="Search todos and subtasks…"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search todos by title or tag…"
+            defaultValue={searchQuery}
+            onChange={(e) => {
+              const val = e.target.value;
+              if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+              searchDebounceRef.current = setTimeout(() => setSearchQuery(val), 300);
+            }}
             className="w-full border rounded-lg pl-9 pr-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-300"
           />
         </div>
 
         {/* ── Filter bar ── */}
-        <div className="flex gap-2 mb-2 flex-wrap">
+        <div className="flex gap-2 mb-2 flex-wrap items-center">
           <select
             value={filterPriority}
             onChange={(e) => setFilterPriority(e.target.value)}
@@ -970,6 +1005,19 @@ export default function HomePage() {
           >
             🏷 Tags
           </button>
+          {/* Clear filters button — visible only when any filter is active */}
+          {(filterPriority !== 'all' || filterTagId !== null || searchQuery) && (
+            <button
+              onClick={() => {
+                setFilterPriority('all');
+                setFilterTagId(null);
+                setSearchQuery('');
+              }}
+              className="px-4 py-2 rounded-lg bg-red-100 text-red-600 text-sm font-medium hover:bg-red-200"
+            >
+              ✕ Clear Filters
+            </button>
+          )}
         </div>
 
         {/* ── Advanced filter: tag chips (Feature 06 + 08) ── */}
@@ -1166,6 +1214,54 @@ export default function HomePage() {
             >
               Close
             </button>
+          </div>
+        </div>
+      )}
+      {/* ── Save as Template Modal (Feature 07) ── */}
+      {showSaveTemplateModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-sm mx-4">
+            <h2 className="text-lg font-bold mb-4">Save as Template</h2>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Template Name *</label>
+            <input
+              type="text"
+              value={templateSaveName}
+              onChange={(e) => setTemplateSaveName(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleConfirmSaveTemplate()}
+              autoFocus
+              className="w-full border rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:ring-2 focus:ring-blue-300"
+            />
+            <label className="block text-sm font-medium text-gray-700 mb-1">Description (optional)</label>
+            <input
+              type="text"
+              value={templateSaveDescription}
+              onChange={(e) => setTemplateSaveDescription(e.target.value)}
+              placeholder="Short description…"
+              className="w-full border rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:ring-2 focus:ring-blue-300"
+            />
+            <label className="block text-sm font-medium text-gray-700 mb-1">Category (optional)</label>
+            <input
+              type="text"
+              value={templateSaveCategory}
+              onChange={(e) => setTemplateSaveCategory(e.target.value)}
+              placeholder="e.g. Work, Personal…"
+              className="w-full border rounded-lg px-3 py-2 text-sm mb-4 outline-none focus:ring-2 focus:ring-blue-300"
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={handleConfirmSaveTemplate}
+                disabled={!templateSaveName.trim()}
+                className="flex-1 py-2 bg-green-500 text-white text-sm rounded-lg hover:bg-green-600 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Save Template
+              </button>
+              <button
+                onClick={() => setShowSaveTemplateModal(false)}
+                className="flex-1 py-2 bg-gray-200 text-sm rounded-lg hover:bg-gray-300"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
       )}

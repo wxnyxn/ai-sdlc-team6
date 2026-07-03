@@ -104,6 +104,23 @@ export async function PUT(
   return NextResponse.json({ todo: updated });
 }
 
+export async function GET(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const userId = await resolveUserId();
+  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const { id } = await params;
+  const todoId = parseInt(id, 10);
+  if (isNaN(todoId)) return NextResponse.json({ error: 'Invalid ID' }, { status: 400 });
+
+  const todo = todoDB.findById.get(todoId, userId);
+  if (!todo) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+
+  return NextResponse.json({ todo });
+}
+
 export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
