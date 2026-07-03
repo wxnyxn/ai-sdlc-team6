@@ -2,6 +2,11 @@
 
 This file guides AI agents working on this codebase. Follow each section in order when implementing features or fixing bugs.
 
+> **Before implementing any feature**, review [`docs/PROGRESS.md`](docs/PROGRESS.md) to:
+> - Confirm the feature's dependencies are already completed (check the `Depends on` field).
+> - Avoid implementing features out of order, which can cause missing DB schema, missing API endpoints, or broken UI flows.
+> - Update the feature status in `docs/PROGRESS.md` to `🔄 In Progress` before starting, and `✅ Completed` when done.
+
 ---
 
 ## 1. Reference Project Patterns

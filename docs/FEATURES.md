@@ -1,5 +1,7 @@
 # Core Features List
 
+> **Before implementing any feature**, review [`docs/PROGRESS.md`](PROGRESS.md) to check dependency status and implementation order. Never start a feature whose dependencies are not yet `✅ Completed`.
+
 ## Core Features
 
 1. **[01-todo-crud-operations.md](../PRPs/01-todo-crud-operations.md)** - Todo CRUD Operations
