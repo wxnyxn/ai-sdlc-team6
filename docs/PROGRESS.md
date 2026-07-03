@@ -16,8 +16,8 @@ Features are ordered so that all dependencies are implemented before the feature
 
 | Order | ID | Feature | Depends On | Status |
 |-------|----|---------|------------|--------|
-| 1 | 01 | Todo CRUD Operations | — | ⬜ Not Started |
-| 2 | 02 | Priority System | 01 | ⬜ Not Started |
+| 1 | 01 | Todo CRUD Operations | — | ✅ Completed |
+| 2 | 02 | Priority System | 01 | ✅ Completed |
 | 3 | 03 | Recurring Todos | 01 | ⬜ Not Started |
 | 4 | 04 | Reminders & Notifications | 01 | ⬜ Not Started |
 | 5 | 05 | Subtasks & Progress Tracking | 01 | ⬜ Not Started |
