@@ -26,7 +26,7 @@ Features are ordered so that all dependencies are implemented before the feature
 | 8 | 08 | Search & Filtering | 06 | ✅ Completed |
 | 9 | 09 | Export & Import | 01 | ✅ Completed |
 | 10 | 10 | Calendar View | 01 | ✅ Completed |
-| 11 | 11 | WebAuthn/Passkeys Authentication | — (enables all) | ⬜ Not Started |
+| 11 | 11 | WebAuthn/Passkeys Authentication | — (enables all) | ✅ Completed |
 
 ---
 

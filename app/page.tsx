@@ -1,11 +1,12 @@
 'use client';
 
-// Main Todo Page — Features 01-09
+// Main Todo Page — Features 01-11
 // UI Reference: docs/main_ui.png, docs/main_ui_pending.png, docs/main_ui_advanced_options.png,
 //               docs/main_ui_export.png, docs/template_ui.png, docs/notification_ui.png
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, type ChangeEvent } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { getSingaporeNow, formatSingaporeDate } from '@/lib/timezone';
 
 interface Todo {
@@ -83,6 +84,11 @@ function getRelativeDue(dueDate: string): { text: string; overdue: boolean } {
 }
 
 export default function HomePage() {
+  const router = useRouter();
+
+  // ── Session state (Feature 11) ────────────────────────────────────────────────
+  const [username, setUsername] = useState<string | null>(null);
+
   // ── Form state ──────────────────────────────────────────────────────────────
   const [title, setTitle] = useState('');
   const [priority, setPriority] = useState<'high' | 'medium' | 'low'>('medium');
@@ -170,7 +176,16 @@ export default function HomePage() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
-  }, [loadTodos]);
+
+  // ── Load session username (Feature 11) ──────────────────────────────────────
+  useEffect(() => {
+    fetch('/api/auth/session')
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (data?.user?.username) setUsername(data.user.username);
+      })
+      .catch(() => null);
+  }, []);
 
   // ── Notification permission (Feature 04) ─────────────────────────────────────
   useEffect(() => {
@@ -369,7 +384,7 @@ export default function HomePage() {
     importInputRef.current?.click();
   }
 
-  async function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleImportFile(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     try {
@@ -392,6 +407,12 @@ export default function HomePage() {
       alert('Invalid JSON file.');
     }
     e.target.value = '';
+  }
+
+  // ── Logout (Feature 11) ────────────────────────────────────────────────────
+  async function handleLogout() {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    router.push('/login');
   }
 
   // ── Add todo ──────────────────────────────────────────────────────────────────
@@ -737,8 +758,7 @@ export default function HomePage() {
         <div>
           <h1 className="text-3xl font-bold">Todo App</h1>
           <p className="text-gray-500 text-sm mt-1">
-            {/* Placeholder — username shown after Feature 11 (Auth) */}
-            Welcome
+            {username ? `Welcome, ${username}` : 'Welcome'}
           </p>
         </div>
         <nav className="flex items-center gap-2 flex-wrap justify-end">
@@ -779,7 +799,10 @@ export default function HomePage() {
           >
             🔔
           </button>
-          <button className="px-4 py-2 rounded-lg bg-gray-700 text-white text-sm font-medium hover:bg-gray-800">
+          <button
+            onClick={handleLogout}
+            className="px-4 py-2 rounded-lg bg-gray-700 text-white text-sm font-medium hover:bg-gray-800"
+          >
             Logout
           </button>
         </nav>
